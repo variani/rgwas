@@ -10,3 +10,4 @@ License: GPL-3
 Imports:
     parallel,
 		stats
+RoxygenNote: 6.1.1
