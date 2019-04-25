@@ -106,7 +106,7 @@ plotYb.MFMR <- function(x, data = c("Yb", "Gb"), ...)
   p
 }
 
-plotYq.MFMR <- function(x, data = c("Yq", "G"), ...)
+plotYq.MFMR <- function(x, data = c("Yq", "G"), scale = FALSE, ...)
 {
   data <- match.arg(data)
   
@@ -124,9 +124,11 @@ plotYq.MFMR <- function(x, data = c("Yq", "G"), ...)
   tab <- lapply(colnames(Y), function(t) {
     y <- Y[, t]
     # the case of Intercept
-    scale <- (sd(y) > 0)
-    y <- scale(y, center = TRUE, scale = scale)
-    
+    if(scale) {
+      sc <- (sd(y) > 0)
+      y <- scale(y, center = TRUE, scale = sc)
+    }
+      
     clusters <- sort(unique(x$clust))
     stats <- lapply(clusters, function(k) {
       yk <- `if`(k == 0, y, y[x$clust == k])

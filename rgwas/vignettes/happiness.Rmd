@@ -1,0 +1,154 @@
+---
+title: "MFMR on hapiness data"
+author: "Andrey Ziyatdinov"
+date: "`r Sys.Date()`"
+output:
+ html_document:
+    fig_caption: yes
+    toc: true
+    number_sections: false
+---
+
+```{r options, echo = F}
+opts_chunk$set(comment = NA, results = 'markup', tidy = F, message = F, warning = F, echo = T,
+  fig.width = 5, fig.height = 5, cache = F)
+```
+
+```{r inc}
+library(tidyverse)
+
+library(wooldridge)
+
+library(devtools)
+load_all()
+
+library(ggplot2)
+library(cowplot)
+theme_set(theme_minimal())
+```
+
+
+# Dataset
+
+https://www.rdocumentation.org/packages/wooldridge/versions/1.3.1/topics/happiness
+
+```{r data}
+data(happiness, package = "wooldridge")
+
+happiness <- as_tibble(happiness) %>%
+  filter(year == 2006) %>%
+  select(-starts_with("y"))
+```
+
+```{r glimpse}
+glimpse(happiness)
+```
+
+## Filter by missingness
+
+```{r na}
+apply(happiness, 2, function(x) sum(!is.na(x))) %>% sort
+```
+
+```{r cols_na}
+cols <- lapply(names(happiness), function(x) 
+    tibble(col = x, num_non_na = sum(!is.na(happiness[[x]])))) %>% 
+  bind_rows %>% 
+  filter(num_non_na > 2000) %$% col
+```
+
+```{r filter_na}
+#happiness <- select(happiness, one_of(cols))
+```
+
+## Process outcomes
+
+```{r outcomes}
+outcomes <- c("income", "happy", "vhappy", "prestige")
+```
+
+### outcome 1: happiness
+
+```{r happiness}
+happiness$income %>% table
+
+happiness$income %>% droplevels %>% as.numeric %>% table
+
+happiness <- mutate(happiness,
+  income = droplevels(income) %>% as.numeric)
+```
+
+### oucome 2: vhappy
+
+```{r tab_vhappy}
+table(happiness$happy, happiness$vhappy)
+```
+
+```{r happy}
+happiness <- mutate(happiness,
+  happy = droplevels(happy) %>% as.numeric,
+  happy = max(happy) - happy)
+```
+
+## Process predictors
+
+```{r predictors}
+predictors <- c("educ", "babies", "preteen", "teens", "mothfath16", "black", 
+  "female", "blackfemale", "attend", "occattend", "regattend",
+  #"divorce", 
+  "gwbush00", "gwbush04", 
+  #"owngun", 
+  "unem10", 
+  "tvhours")
+```
+
+```{r pred}
+happiness <- mutate(happiness,
+  divorce = droplevels(divorce) %>% as.numeric,
+  owngun = droplevels(owngun) %>% as.numeric,
+  widowed = droplevels(widowed) %>% as.numeric)
+```
+
+### predictor 1: attend (occattend, regattend)
+
+```{r attend}
+#happiness <- select(happiness, -attend)
+happiness <- mutate(happiness,
+  attend = droplevels(attend) %>% as.numeric)
+```
+
+## Clean dataset ready for the analysis
+
+```{r clean}
+nrow(happiness)
+happiness <- subset(happiness, select = c(outcomes, predictors)) %>% 
+  na.omit
+nrow(happiness)
+    
+happiness_y <- subset(happiness, select = outcomes) 
+happiness_x <- subset(happiness, select = predictors)
+```
+
+## Matrices: Y, Yb, G
+
+```{r mat}
+ycols_b <- apply(happiness_y, 2, function(x) all(x %in% c(0, 1)))
+Yb <- happiness_y[, ycols_b] %>% as.matrix
+Y <- happiness_y[, !ycols_b] %>% as.matrix
+
+G <- as.matrix(happiness_x) 
+G <- cbind(1, G)
+colnames(G)[1] <- "Intercept"
+```
+
+# MFMR
+
+```{r out}
+out <- call_mfmr(Yb, Y, G, K = 5, nrun = 1) 
+```
+
+## Plots
+
+```{r plots, fig.width = 12, fig.height = 12}
+plot_grid(plotYb(out), plotYq(out), plotK(out), plotYq(out, "G"), ncol = 1)
+```
