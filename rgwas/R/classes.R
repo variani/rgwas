@@ -7,6 +7,11 @@
 #' @rdname MFMRClass
 #' @exportClass MFMR
 
+#' S3 class ScoreMFMR.
+#' @name ScoreMFMR
+#' @rdname ScoreMFMR
+#' @exportClass ScoreMFMR
+
 #----------------------
 # Method Declatations
 #----------------------
@@ -179,8 +184,87 @@ plotK.MFMR <- function(x, ...)
   
   #p <- p + geom_text(aes(label = paste0(round(100*prop, 0), "%")), position = position_stack(vjust = 0.5)) 
   
-  p <- p + theme(panel.grid = element_blank(), axis.title = element_blank(), axis.text = element_blank())
+  p <- p + theme(panel.grid = element_blank(), axis.title = element_blank(), axis.text = element_blank())#, legend.title = element_blank())
   
+	# add title
+	title <- paste0("N = ", format(out$N, big.mark = ","),
+		"; ", "K = ", out$K)
+	p <- p + labs(fill = title)
   # return
   p             
+}
+
+#------------------------------
+# Wrapper to mfmr (class ScoreMFMR)
+#------------------------------
+
+call_mfmr_score <- function(Yb, Yq, G, X = NULL, K, nfold = 10, nrep = 1,
+	thr = 0.95, verbose = 1,
+	...)
+{
+  # catch the call & run `score_K`
+	# score_K	<- function( Yb, Yq, G, X=NULL, K, n.folds=10, ... ){
+  mc <- match.call()
+  
+  scores <- lapply(seq(nrep), function(r) {
+		if(verbose) cat(" * rep:", r, "/", nrep, "\n")
+		
+		lapply(seq(K), function(k) {
+			if(verbose) cat(" * k:", k, "/", K, "\n")
+				
+			if(k == 1) {
+				scores <- score_k(Yb, Yq, G, X, K = k, n.folds = nfold)
+			} else {
+				scores <- score_k(Yb, Yq, G, X, K = k, n.folds = nfold, ...)
+			}
+		
+			scores <- as_tibble(scores)
+			names(scores) <- c("ll", "llk", "entropy", "prop")
+		
+			mutate(scores, k = k, rep = r)
+		}) %>% bind_rows
+  }) %>% bind_rows
+	
+	### process
+	# https://stats.stackexchange.com/a/206509
+	compute_se <- function(x) 2*sd(x) / sqrt(length(x))
+	
+	ll <- select(scores, ll, k)
+	ll <- group_by(ll, k) %>% summarize(score = mean(ll), 
+		se = compute_se(ll))
+	
+	llk <- select(scores, llk, k)
+	llk <- group_by(llk, k) %>% summarize(score = mean(llk), 
+		se = compute_se(llk))	
+
+	entropy <- select(scores, entropy, k)
+	entropy <- group_by(entropy, k) %>% summarize(score = mean(entropy), 
+		se = compute_se(entropy))		
+			
+	prop <- select(scores, prop, k)
+	prop <- group_by(prop, k) %>% summarize(score = mean(prop), 
+		se = compute_se(prop))		
+			
+	### return
+	out <- list(call = mc, scores = scores, 
+		ll = ll, llk = llk, entropy = entropy, prop = prop)
+	oldClass(out) <- "ScoreMFMR"
+	
+	out
+}
+
+plot.ScoreMFMR <- function(x, ...)
+{
+	tab <- bind_rows(
+		mutate(x$ll, metric = "log-lik"),
+		mutate(x$entropy, metric = "entropy"),
+		mutate(x$prop, metric = "prop"))
+
+	tab <- mutate(tab, 
+		k = as.factor(k),
+		metric = factor(metric, levels = c("log-lik", "entropy", "prop")))
+	
+	p <- ggplot(tab, aes(k, score, group = metric)) + geom_point() + geom_line() + geom_errorbar(aes(ymin = score - se, ymax = score + se), width = 0.1) + facet_wrap(~ metric, nrow = 1, scales = "free_y")
+	
+	p
 }
